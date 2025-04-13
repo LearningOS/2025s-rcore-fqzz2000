@@ -45,8 +45,9 @@ pub struct TaskManagerInner {
     tasks: [TaskControlBlock; MAX_APP_NUM],
     /// id of current `Running` task
     current_task: usize,
-    /// syscall trace table
-    syscall_trace_table: [u8; 1024],
+    // syscall count table
+    syscall_count: [[isize; 1024]; MAX_APP_NUM],
+    
 }
 
 lazy_static! {
@@ -67,7 +68,7 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
-                    syscall_trace_table: [0; 1024],
+                    syscall_count: [[0; 1024]; MAX_APP_NUM],
                 })
             },
         }
@@ -141,15 +142,16 @@ impl TaskManager {
     /// increase the syscall count for the given id
     fn increase_syscall_count(&self, id: usize) {
         let mut inner = self.inner.exclusive_access();
-        inner.syscall_trace_table[id] += 1;
+        let current = inner.current_task;
+        inner.syscall_count[current][id] += 1;
         drop(inner);
     }
     /// get the syscall count for the given id
-    fn get_syscall_count(&self, id: usize) -> u8 {
+    fn get_syscall_count(&self, id: usize) -> isize {
         let inner = self.inner.exclusive_access();
-        let count = inner.syscall_trace_table[id];
+        let count = inner.syscall_count[inner.current_task][id];
         drop(inner);
-        count
+        count as isize
     }
 }
 
@@ -194,9 +196,9 @@ pub fn increase_syscall_count(id: usize) {
 }
 
 /// get the syscall count for the given id
-pub fn get_syscall_count(id: usize) -> u8 {
+pub fn get_syscall_count(id: usize) -> isize {
     if id >= 1024 {
         panic!("Invalid syscall id: {}", id);
     }
-    TASK_MANAGER.get_syscall_count(id)
+    TASK_MANAGER.get_syscall_count(id) as isize
 }

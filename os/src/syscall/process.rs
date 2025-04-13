@@ -58,6 +58,7 @@ pub fn sys_trace(trace_request: usize, id: usize, data: usize) -> isize {
         2 => {
             // return the number of syscalls with _id
             get_syscall_count(id) as isize
+
         }
         _ => {
             -1
