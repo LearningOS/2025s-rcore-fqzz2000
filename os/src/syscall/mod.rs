@@ -24,17 +24,39 @@ const SYSCALL_TRACE: usize = 410;
 mod fs;
 mod process;
 
+
 use fs::*;
 use process::*;
+use crate::task::*;
 
 /// handle syscall exception with `syscall_id` and other arguments
 pub fn syscall(syscall_id: usize, args: [usize; 3]) -> isize {
     match syscall_id {
-        SYSCALL_WRITE => sys_write(args[0], args[1] as *const u8, args[2]),
-        SYSCALL_EXIT => sys_exit(args[0] as i32),
-        SYSCALL_YIELD => sys_yield(),
-        SYSCALL_GET_TIME => sys_get_time(args[0] as *mut TimeVal, args[1]),
-        SYSCALL_TRACE => sys_trace(args[0], args[1], args[2]),
+        SYSCALL_WRITE => {
+            increase_syscall_count(SYSCALL_WRITE);
+            sys_write(args[0], args[1] as *const u8, args[2])
+            
+        },
+        SYSCALL_EXIT => {
+            increase_syscall_count(SYSCALL_EXIT);
+            sys_exit(args[0] as i32)
+            
+        },
+            SYSCALL_YIELD => {
+            increase_syscall_count(SYSCALL_YIELD);
+            sys_yield()
+            
+        },
+        SYSCALL_GET_TIME => {
+            increase_syscall_count(SYSCALL_GET_TIME);
+            sys_get_time(args[0] as *mut TimeVal, args[1])
+            
+        },
+        SYSCALL_TRACE => {
+            increase_syscall_count(SYSCALL_TRACE);
+            sys_trace(args[0], args[1], args[2])
+            
+        },
         _ => panic!("Unsupported syscall_id: {}", syscall_id),
     }
 }
