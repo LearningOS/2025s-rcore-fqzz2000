@@ -1,5 +1,8 @@
 //! Process management syscalls
-use crate::task::{change_program_brk, exit_current_and_run_next, suspend_current_and_run_next};
+use crate::{ task::{change_program_brk, exit_current_and_run_next, get_syscall_count, suspend_current_and_run_next}, timer::get_time_us};
+
+use crate::mm::{PageTable, VirtAddr, PhysAddr};
+use crate::task::current_user_token;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -25,16 +28,49 @@ pub fn sys_yield() -> isize {
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
-pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
+pub fn sys_get_time(ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
-    -1
+    // get vpn from ts
+    
+    let us = get_time_us();
+   let time_val = TimeVal {
+    sec: us / 1_000_000,
+    usec: us % 1_000_000,
+   };
+    copy_to_user(current_user_token(), ts as usize, &time_val);
+    0
 }
+
+
+fn copy_to_user(token: usize, dst: usize,  time_val: & TimeVal) {
+    let start = dst;
+    let start_va = VirtAddr::from(start);
+    let start_vpn = start_va.floor();
+    let page_table = PageTable::from_token(token);
+    let ppn : usize = page_table.translate(start_vpn).unwrap().ppn().into();
+    let pa = PhysAddr::from(ppn + start_va.page_offset());
+    let ptr = pa.get_mut::<TimeVal>();
+    
+    *ptr = TimeVal {
+        sec: time_val.sec,
+        usec: time_val.usec,
+    };
+}
+
+
 
 /// TODO: Finish sys_trace to pass testcases
 /// HINT: You might reimplement it with virtual memory management.
-pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
+pub fn sys_trace(trace_request: usize, id: usize, _data: usize) -> isize {
     trace!("kernel: sys_trace");
-    -1
+    match trace_request {
+        2 => {
+            get_syscall_count(id)
+        }
+        _ => {
+            -1
+        }
+    }
 }
 
 // YOUR JOB: Implement mmap.

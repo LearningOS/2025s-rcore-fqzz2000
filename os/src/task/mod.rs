@@ -46,6 +46,8 @@ struct TaskManagerInner {
     tasks: Vec<TaskControlBlock>,
     /// id of current `Running` task
     current_task: usize,
+    /// syscall count
+    syscall_count: [[usize; 1024]; 256],
 }
 
 lazy_static! {
@@ -64,6 +66,7 @@ lazy_static! {
                 UPSafeCell::new(TaskManagerInner {
                     tasks,
                     current_task: 0,
+                    syscall_count: [[0; 1024]; 256],
                 })
             },
         }
@@ -153,6 +156,19 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+    /// increase the syscall count for the given id
+    fn increase_syscall_count(&self, id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.syscall_count[current][id] += 1;
+    }
+    /// get the syscall count for the given id
+    fn get_syscall_count(&self, id: usize) -> isize {
+        let inner = self.inner.exclusive_access();
+        inner.syscall_count[inner.current_task][id] as isize
+    }
+
+    
 }
 
 /// Run the first task in task list.
@@ -202,3 +218,14 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
 }
+
+/// increase the syscall count for the given id
+pub fn increase_syscall_count(id: usize) {
+    TASK_MANAGER.increase_syscall_count(id);
+}
+
+/// get the syscall count for the given id
+pub fn get_syscall_count(id: usize) -> isize {
+    TASK_MANAGER.get_syscall_count(id)
+}
+
