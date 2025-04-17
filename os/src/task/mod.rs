@@ -21,6 +21,7 @@ use alloc::vec::Vec;
 use lazy_static::*;
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
+use crate::mm::{MapPermission, VirtAddr};
 
 pub use context::TaskContext;
 
@@ -168,6 +169,18 @@ impl TaskManager {
         inner.syscall_count[inner.current_task][id] as isize
     }
 
+    fn insert_memory_set(&self, start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].memory_set.insert_framed_area(start_va, end_va, permission);
+    }
+
+    fn unmap_memory_set(&self, start: usize, len: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].memory_set.unmap(start, len);
+    }
+
     
 }
 
@@ -229,3 +242,12 @@ pub fn get_syscall_count(id: usize) -> isize {
     TASK_MANAGER.get_syscall_count(id)
 }
 
+/// map a range of memory to the given permission
+pub fn map_memory(start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) {
+    TASK_MANAGER.insert_memory_set(start_va, end_va, permission);
+}
+
+/// unmap a range of memory
+pub fn unmap_memory(start: usize, len: usize) {
+    TASK_MANAGER.unmap_memory_set(start, len);
+}

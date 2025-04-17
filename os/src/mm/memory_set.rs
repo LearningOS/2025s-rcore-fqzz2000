@@ -63,6 +63,7 @@ impl MemorySet {
             None,
         );
     }
+
     fn push(&mut self, mut map_area: MapArea, data: Option<&[u8]>) {
         map_area.map(&mut self.page_table);
         if let Some(data) = data {
@@ -245,6 +246,36 @@ impl MemorySet {
             true
         } else {
             false
+        }
+    }
+
+    /// unmap a range of memory
+    pub fn unmap(&mut self, start: usize, len: usize) {
+        let va = VirtAddr::from(start);
+        let mut start_vpn = va.floor();
+        let end_vpn = VirtAddr::from(start + len).ceil();
+
+        while start_vpn < end_vpn {
+            // for area in self.areas.iter_mut() {
+            //     for vpn in area.vpn_range.into_iter() {
+            //         // unimplemented
+            //         if vpn == start_vpn {
+            //             area.unmap_one(&mut self.page_table, start_vpn);
+            //             start_vpn.step();
+            //         }
+            //     }
+            // }
+    
+            for area in self.areas.iter_mut() {
+                if area.vpn_range.get_start() == start_vpn && area.vpn_range.get_end() == end_vpn {
+                    area.unmap(&mut self.page_table);
+                    return;
+                } else if start_vpn >= area.vpn_range.get_start() && start_vpn < area.vpn_range.get_end() {
+                    area.unmap_one(&mut self.page_table, start_vpn);
+                }
+            }
+            start_vpn.step();
+            
         }
     }
 
