@@ -104,13 +104,13 @@ pub fn exit_current_and_run_next(exit_code: i32) {
 
 /// map a area into memory set
 pub fn mmap_memory(start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) {
-    let task = take_current_task().unwrap();
+    let task = current_task().unwrap();
     task.insert_memory_set(start_va, end_va, permission);
 }
 
 /// unmap a area from memory set    
 pub fn munmap_memory(start_va: usize, len: usize) {
-    let task = take_current_task().unwrap();
+    let task = current_task().unwrap();
     task.unmap_memory_set(start_va, len);
 }
 

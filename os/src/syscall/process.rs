@@ -9,7 +9,7 @@ use crate::{
         suspend_current_and_run_next,
     }, timer::get_time_us,
 };
-use crate::mm::{MapPermission, VirtAddr,  PhysAddr};
+use crate::mm::{ VirtAddr,  MapPermission, PhysAddr};
 use crate::task::mmap_memory;
 use crate::task::munmap_memory;
 use crate::mm::PageTable;
@@ -140,77 +140,40 @@ fn copy_to_user(token: usize, dst: usize,  time_val: & TimeVal) {
     };
 }
 
-
 fn is_overlap(start: &usize, len: &usize, page_table: &PageTable) -> bool {
     let start_va = VirtAddr::from(*start);
     let mut start_vpn = start_va.floor();
-
-    let end_vpn = VirtAddr::from(start + len).ceil();
-    let end_vpn_usize : usize = end_vpn.into();
-    let mut start_vpn_usize : usize = start_vpn.into();
-
-    while start_vpn_usize < end_vpn_usize {
-        // check if given vpn in page table
-        if let Some(_pte) = page_table.translate(start_vpn) {
-            if _pte.is_valid() {
-                info!("vpn: {} is mapped", start_vpn.0);
+    let end_vpn = VirtAddr::from(*start + *len).ceil();
+    while start_vpn < end_vpn {
+        if let Some(pte) = page_table.translate(start_vpn) {
+            if pte.is_valid() {
                 return true;
             }
         }
         start_vpn.0 += 1;
-        start_vpn_usize = start_vpn.into();
     }
-    false    
-}
-
-fn all_overlap(start: &usize, len: &usize, page_table: &PageTable) -> bool {
-    let start_va = VirtAddr::from(*start);
-    let mut start_vpn = start_va.floor();
-
-    let end_vpn = VirtAddr::from(start + len).ceil();
-    let end_vpn_usize : usize = end_vpn.into();
-    let mut start_vpn_usize : usize = start_vpn.into();
-    while start_vpn_usize < end_vpn_usize {
-        // check if given vpn in page table
-        if let Some(_pte) = page_table.translate(start_vpn) {
-            if !_pte.is_valid() {
-                return false;
-            }
-        } else {
-            return false;
-        }
-        start_vpn.0 += 1;
-        start_vpn_usize = start_vpn.into();
-    }
-    true    
-    
+    false
 }
 
 // YOUR JOB: Implement mmap.
 pub fn sys_mmap(_start: usize, _len: usize, _prot: usize) -> isize {
-    trace!("kernel: sys_mmap NOT IMPLEMENTED YET!");
-    // check prot
+    info!("kernel: sys_mmap NOT IMPLEMENTED YET!");
     if _prot & !0x7 != 0 || _prot & 0x7 == 0 {
         error!("failed due to prot");
         return -1;
     }
-    // check align
-    let va = VirtAddr::from(_start);
-    if !va.aligned() {
+    if !VirtAddr::from(_start).aligned() {
         error!("failed due to alignment");
         return -1;
     }
-    // check len
     if _len == 0 {
         return 0;
     }
-    // check if any pages already mapped
     let page_table = PageTable::from_token(current_user_token());
     if is_overlap(&_start, &_len, &page_table) {
         error!("failed due to overlap");
         return -1;
     }
-    // map pages
     let mut permission = MapPermission::U;
     if _prot & 0x1 != 0 {
         permission.insert(MapPermission::R);
@@ -221,17 +184,32 @@ pub fn sys_mmap(_start: usize, _len: usize, _prot: usize) -> isize {
     if _prot & 0x4 != 0 {
         permission.insert(MapPermission::X);
     }
-
-    mmap_memory(va, VirtAddr::from(_start + _len), permission);
+    info!("enter mmap");
+    mmap_memory(VirtAddr::from(_start), VirtAddr::from(_start + _len), permission);
     0
-
 }
 
+fn all_overlap(start: &usize, len: &usize, page_table: &PageTable) -> bool {
+    let start_va = VirtAddr::from(*start);
+    let mut start_vpn = start_va.floor();
+    let end_vpn = VirtAddr::from(*start + *len).ceil();
+    while start_vpn < end_vpn {
+        if let Some(pte) = page_table.translate(start_vpn) {
+            if !pte.is_valid() {
+                return false;
+            }
+        } else {
+            return false;
+        }
+        start_vpn.0 += 1;
+    }
+    true
+}
 // YOUR JOB: Implement munmap.
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
     trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
-    if _start % 4096 != 0 {
-        return -1; 
+    if !VirtAddr::from(_start).aligned() {
+        return -1;
     }
     let page_table = PageTable::from_token(current_user_token());
     if !all_overlap(&_start, &_len, &page_table) {
