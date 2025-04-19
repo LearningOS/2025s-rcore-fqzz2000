@@ -35,6 +35,7 @@ pub use processor::{
     current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
     Processor,
 };
+use crate::mm::{MapPermission, VirtAddr};
 /// Suspend the current 'Running' task and run the next task in task list.
 pub fn suspend_current_and_run_next() {
     // There must be an application running.
@@ -99,6 +100,18 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     // we do not have to save task context
     let mut _unused = TaskContext::zero_init();
     schedule(&mut _unused as *mut _);
+}
+
+/// map a area into memory set
+pub fn mmap_memory(start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) {
+    let task = take_current_task().unwrap();
+    task.insert_memory_set(start_va, end_va, permission);
+}
+
+/// unmap a area from memory set    
+pub fn munmap_memory(start_va: usize, len: usize) {
+    let task = take_current_task().unwrap();
+    task.unmap_memory_set(start_va, len);
 }
 
 lazy_static! {

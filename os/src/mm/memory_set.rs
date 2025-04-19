@@ -72,6 +72,28 @@ impl MemorySet {
             self.areas.remove(idx);
         }
     }
+
+    /// unmap a area
+     /// unmap a range of memory
+     pub fn unmap(&mut self, start: usize, len: usize) {
+        let va = VirtAddr::from(start);
+        let mut start_vpn = va.floor();
+        let end_vpn = VirtAddr::from(start + len).ceil();
+
+        while start_vpn < end_vpn {
+    
+            for area in self.areas.iter_mut() {
+                if area.vpn_range.get_start() == start_vpn && area.vpn_range.get_end() == end_vpn {
+                    area.unmap(&mut self.page_table);
+                    return;
+                } else if start_vpn >= area.vpn_range.get_start() && start_vpn < area.vpn_range.get_end() {
+                    area.unmap_one(&mut self.page_table, start_vpn);
+                }
+            }
+            start_vpn.step();
+            
+        }
+    }
     /// Add a new MapArea into this MemorySet.
     /// Assuming that there are no conflicts in the virtual address
     /// space.
