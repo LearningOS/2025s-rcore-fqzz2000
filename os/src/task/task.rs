@@ -144,7 +144,13 @@ impl TaskControlBlock {
         );
         task_control_block
     }
-
+    /// spawn a new process
+    pub fn spawn(self: &Arc<Self>, elf_data: &[u8]) -> Arc<Self> {
+        // this is essentially a fork + exec but we do not need to copy the memory set
+        let new_task = self.fork();
+        new_task.exec(elf_data);
+        new_task
+    }
     /// Load a new elf to replace the original application address space and start execution
     pub fn exec(&self, elf_data: &[u8]) {
         // memory_set with elf program headers/trampoline/trap context/user stack
