@@ -1,5 +1,5 @@
 use clap::{App, Arg};
-use easy_fs::{BlockDevice, EasyFileSystem};
+use easy_fs::{BlockDevice, EasyFileSystem, DiskInodeType};
 use std::fs::{read_dir, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::sync::Arc;
@@ -101,8 +101,8 @@ fn efs_test() -> std::io::Result<()> {
     EasyFileSystem::create(block_file.clone(), 4096, 1);
     let efs = EasyFileSystem::open(block_file.clone());
     let root_inode = EasyFileSystem::root_inode(&efs);
-    root_inode.create("filea");
-    root_inode.create("fileb");
+    root_inode.create("filea").unwrap();
+    root_inode.create("fileb").unwrap();
     for name in root_inode.ls() {
         println!("{}", name);
     }

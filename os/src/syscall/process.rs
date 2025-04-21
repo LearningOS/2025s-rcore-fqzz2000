@@ -9,8 +9,12 @@ use crate::{
         add_task, current_task, current_user_token, exit_current_and_run_next,
         suspend_current_and_run_next,
     },
+    timer::get_time_us,
 };
-
+use crate::mm::{ VirtAddr,   PhysAddr, MapPermission};
+use crate::task::mmap_memory;
+use crate::task::munmap_memory;
+use crate::mm::PageTable;
 #[repr(C)]
 #[derive(Debug)]
 pub struct TimeVal {
@@ -105,32 +109,117 @@ pub fn sys_waitpid(pid: isize, exit_code_ptr: *mut i32) -> isize {
 /// YOUR JOB: get time with second and microsecond
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
+/// YOUR JOB: get time with second and microsecond
+/// HINT: You might reimplement it with virtual memory management.
+/// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+    trace!("kernel: sys_get_time");
+    // get vpn from ts
+    info!("kernel: sys_get_time");
+    let us = get_time_us();
+   let time_val = TimeVal {
+    sec: us / 1_000_000,
+    usec: us % 1_000_000,
+   };
+    copy_to_user(current_user_token(), _ts as usize, &time_val);
+    0
 }
 
-/// YOUR JOB: Implement mmap.
-pub fn sys_mmap(_start: usize, _len: usize, _port: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_mmap NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+
+fn copy_to_user(token: usize, dst: usize,  time_val: & TimeVal) {
+    let start = dst;
+    let start_va = VirtAddr::from(start);
+    let start_vpn = start_va.floor();
+    let page_table = PageTable::from_token(token);
+    let ppn : PhysAddr = page_table.translate(start_vpn).unwrap().ppn().into();
+    let ppn_usize : usize = ppn.into();
+    let pa : PhysAddr = PhysAddr::from(ppn_usize + start_va.page_offset());
+    let ptr = pa.get_mut::<TimeVal>();
+    
+    *ptr = TimeVal {
+        sec: time_val.sec,
+        usec: time_val.usec,
+    };
 }
 
-/// YOUR JOB: Implement munmap.
+fn is_overlap(start: &usize, len: &usize, page_table: &PageTable) -> bool {
+    let start_va = VirtAddr::from(*start);
+    let mut start_vpn = start_va.floor();
+    let end_vpn = VirtAddr::from(*start + *len).ceil();
+    while start_vpn < end_vpn {
+        if let Some(pte) = page_table.translate(start_vpn) {
+            if pte.is_valid() {
+                return true;
+            }
+        }
+        start_vpn.0 += 1;
+    }
+    false
+}
+
+// YOUR JOB: Implement mmap.
+pub fn sys_mmap(_start: usize, _len: usize, _prot: usize) -> isize {
+    info!("kernel: sys_mmap NOT IMPLEMENTED YET!");
+    if _prot & !0x7 != 0 || _prot & 0x7 == 0 {
+        error!("failed due to prot");
+        return -1;
+    }
+    if !VirtAddr::from(_start).aligned() {
+        error!("failed due to alignment");
+        return -1;
+    }
+    if _len == 0 {
+        return 0;
+    }
+    let page_table = PageTable::from_token(current_user_token());
+    if is_overlap(&_start, &_len, &page_table) {
+        error!("failed due to overlap");
+        return -1;
+    }
+    let mut permission = MapPermission::U;
+    if _prot & 0x1 != 0 {
+        permission.insert(MapPermission::R);
+    }
+    if _prot & 0x2 != 0 {
+        permission.insert(MapPermission::W);
+    }
+    if _prot & 0x4 != 0 {
+        permission.insert(MapPermission::X);
+    }
+    info!("enter mmap");
+    mmap_memory(VirtAddr::from(_start), VirtAddr::from(_start + _len), permission);
+    0
+}
+
+fn all_overlap(start: &usize, len: &usize, page_table: &PageTable) -> bool {
+    let start_va = VirtAddr::from(*start);
+    let mut start_vpn = start_va.floor();
+    let end_vpn = VirtAddr::from(*start + *len).ceil();
+    while start_vpn < end_vpn {
+        if let Some(pte) = page_table.translate(start_vpn) {
+            if !pte.is_valid() {
+                return false;
+            }
+        } else {
+            return false;
+        }
+        start_vpn.0 += 1;
+    }
+    true
+}
+// YOUR JOB: Implement munmap.
 pub fn sys_munmap(_start: usize, _len: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_munmap NOT IMPLEMENTED",
-        current_task().unwrap().pid.0
-    );
-    -1
+    trace!("kernel: sys_munmap NOT IMPLEMENTED YET!");
+    if !VirtAddr::from(_start).aligned() {
+        return -1;
+    }
+    let page_table = PageTable::from_token(current_user_token());
+    if !all_overlap(&_start, &_len, &page_table) {
+        return -1;
+    }
+    munmap_memory(_start, _len);
+    0
 }
-
 /// change data segment size
 pub fn sys_sbrk(size: i32) -> isize {
     trace!("kernel:pid[{}] sys_sbrk", current_task().unwrap().pid.0);
@@ -144,11 +233,22 @@ pub fn sys_sbrk(size: i32) -> isize {
 /// YOUR JOB: Implement spawn.
 /// HINT: fork + exec =/= spawn
 pub fn sys_spawn(_path: *const u8) -> isize {
-    trace!(
+    info!(
         "kernel:pid[{}] sys_spawn NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    let path = translated_str(current_user_token(), _path);
+    if let Some(app_inode) = open_file(path.as_str(), OpenFlags::RDONLY) {
+        let all_data = app_inode.read_all();
+        info!("all_data length: {}", all_data.len());
+        let task = current_task().unwrap();
+        let new_task = task.spawn(all_data.as_slice());
+        let new_pid = new_task.pid.0;
+        add_task(new_task);
+        new_pid as isize
+    } else {
+        -1
+    }
 }
 
 // YOUR JOB: Set task priority.
@@ -157,5 +257,10 @@ pub fn sys_set_priority(_prio: isize) -> isize {
         "kernel:pid[{}] sys_set_priority NOT IMPLEMENTED",
         current_task().unwrap().pid.0
     );
-    -1
+    if _prio < 2 {
+        return -1;
+    }
+    let task = current_task().unwrap();
+    task.set_priority(&(_prio as usize));
+    _prio as isize
 }

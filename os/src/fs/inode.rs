@@ -11,9 +11,10 @@ use crate::sync::UPSafeCell;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitflags::*;
-use easy_fs::{EasyFileSystem, Inode};
+use easy_fs::{EasyFileSystem, Inode, DiskInodeType};
 use lazy_static::*;
-
+use crate::fs::Stat;
+use crate::fs::StatMode;
 /// inode in memory
 /// A wrapper around a filesystem inode
 /// to implement File trait atop
@@ -101,10 +102,24 @@ impl OpenFlags {
     }
 }
 
+/// create a hardlink
+pub fn create_hardlink(name: &str, target: &str) -> Option<Arc<OSInode>> {
+    let inode = ROOT_INODE.linkat(name, DiskInodeType::HardLink, Some(target));
+    let target_inode = ROOT_INODE.find(target).unwrap();
+    target_inode.set_nlink(target_inode.get_nlink() + 1);
+    inode.map(|inode| Arc::new(OSInode::new(true, true, inode)))
+}
+///unlink a file
+pub fn unlink(name: &str) -> bool {
+    ROOT_INODE.delete(name)
+}
+
 /// Open a file
 pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
+    info!("open_file: {}", name);
     let (readable, writable) = flags.read_write();
     if flags.contains(OpenFlags::CREATE) {
+        info!("create file");
         if let Some(inode) = ROOT_INODE.find(name) {
             // clear size
             inode.clear();
@@ -112,10 +127,11 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
         } else {
             // create file
             ROOT_INODE
-                .create(name)
+                .linkat(name, DiskInodeType::File, None)
                 .map(|inode| Arc::new(OSInode::new(readable, writable, inode)))
         }
     } else {
+        info!("open file");
         ROOT_INODE.find(name).map(|inode| {
             if flags.contains(OpenFlags::TRUNC) {
                 inode.clear();
@@ -156,4 +172,23 @@ impl File for OSInode {
         }
         total_write_size
     }
+
+    fn fstat(&self) -> Stat {
+        let inner = self.inner.exclusive_access();
+        let ino = inner.inode.get_inode_id();
+        let mode = match inner.inode.get_mode() {
+            0 => StatMode::DIR,
+            1 => StatMode::FILE,
+            2 => StatMode::LINK,
+            _ => StatMode::NULL,
+        };
+        let nlink = inner.inode.get_nlink();
+
+        let mut stat = Stat::new();
+        stat.ino = ino as u64;
+        stat.mode = mode;
+        stat.nlink = nlink as u32;
+        stat
+    }
+
 }

@@ -70,8 +70,12 @@ impl SuperBlock {
 /// Type of a disk inode
 #[derive(PartialEq)]
 pub enum DiskInodeType {
+    /// A file
     File,
+    /// A directory
     Directory,
+    /// A hard link
+    HardLink,
 }
 
 /// A indirect block
@@ -81,8 +85,10 @@ type DataBlock = [u8; BLOCK_SZ];
 /// A disk inode
 #[repr(C)]
 pub struct DiskInode {
+    pub inode_id: u32,
     pub size: u32,
-    pub direct: [u32; INODE_DIRECT_COUNT],
+    pub nlink: u32,
+    pub direct: [u32; INODE_DIRECT_COUNT], // if it is a hard link, we use the first direct inode to store the target inode id, all other fields are 0
     pub indirect1: u32,
     pub indirect2: u32,
     type_: DiskInodeType,
@@ -91,12 +97,14 @@ pub struct DiskInode {
 impl DiskInode {
     /// Initialize a disk inode, as well as all direct inodes under it
     /// indirect1 and indirect2 block are allocated only when they are needed
-    pub fn initialize(&mut self, type_: DiskInodeType) {
+    pub fn initialize(&mut self, type_: DiskInodeType, inode_id: u32) {
         self.size = 0;
+        self.nlink = 1;
         self.direct.iter_mut().for_each(|v| *v = 0);
         self.indirect1 = 0;
         self.indirect2 = 0;
         self.type_ = type_;
+        self.inode_id = inode_id;
     }
     /// Whether this inode is a directory
     pub fn is_dir(&self) -> bool {
@@ -107,6 +115,15 @@ impl DiskInode {
     pub fn is_file(&self) -> bool {
         self.type_ == DiskInodeType::File
     }
+
+    /// Whether this inode is a hard link
+    #[allow(unused)]
+    pub fn is_hard_link(&self) -> bool {
+        self.type_ == DiskInodeType::HardLink
+    }
+
+
+
     /// Return block number correspond to size.
     pub fn data_blocks(&self) -> u32 {
         Self::_data_blocks(self.size)

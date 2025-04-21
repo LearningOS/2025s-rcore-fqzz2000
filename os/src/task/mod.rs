@@ -29,7 +29,7 @@ use lazy_static::*;
 pub use manager::{fetch_task, TaskManager};
 use switch::__switch;
 pub use task::{TaskControlBlock, TaskStatus};
-
+use crate::mm::{ VirtAddr,  MapPermission};
 pub use id::{kstack_alloc, pid_alloc, KernelStack, PidHandle};
 pub use manager::add_task;
 pub use processor::{
@@ -104,6 +104,19 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     schedule(&mut _unused as *mut _);
 }
 
+
+/// map a area into memory set
+pub fn mmap_memory(start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) {
+    let task = current_task().unwrap();
+    task.insert_memory_set(start_va, end_va, permission);
+}
+
+/// unmap a area from memory set    
+pub fn munmap_memory(start_va: usize, len: usize) {
+    let task = current_task().unwrap();
+    task.unmap_memory_set(start_va, len);
+}
+
 lazy_static! {
     /// Creation of initial process
     ///
@@ -112,11 +125,13 @@ lazy_static! {
     pub static ref INITPROC: Arc<TaskControlBlock> = Arc::new({
         let inode = open_file("ch6b_initproc", OpenFlags::RDONLY).unwrap();
         let v = inode.read_all();
+        info!("initproc read all done");
         TaskControlBlock::new(v.as_slice())
     });
 }
 
 ///Add init process to the manager
 pub fn add_initproc() {
+    info!("add initproc");
     add_task(INITPROC.clone());
 }
