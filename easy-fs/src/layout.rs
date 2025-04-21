@@ -85,7 +85,6 @@ type DataBlock = [u8; BLOCK_SZ];
 /// A disk inode
 #[repr(C)]
 pub struct DiskInode {
-    pub inode_id: u32,
     pub size: u32,
     pub nlink: u32,
     pub direct: [u32; INODE_DIRECT_COUNT], // if it is a hard link, we use the first direct inode to store the target inode id, all other fields are 0
@@ -104,7 +103,6 @@ impl DiskInode {
         self.indirect1 = 0;
         self.indirect2 = 0;
         self.type_ = type_;
-        self.inode_id = inode_id;
     }
     /// Whether this inode is a directory
     pub fn is_dir(&self) -> bool {
