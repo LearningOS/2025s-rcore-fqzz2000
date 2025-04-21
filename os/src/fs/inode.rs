@@ -11,7 +11,7 @@ use crate::sync::UPSafeCell;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitflags::*;
-use easy_fs::{EasyFileSystem, Inode, DiskInodeType};
+use easy_fs::{EasyFileSystem, Inode};
 use lazy_static::*;
 use crate::fs::Stat;
 use crate::fs::StatMode;
@@ -103,15 +103,16 @@ impl OpenFlags {
 }
 
 /// create a hardlink
-pub fn create_hardlink(name: &str, target: &str) -> Option<Arc<OSInode>> {
-    let inode = ROOT_INODE.linkat(name, DiskInodeType::HardLink, Some(target));
-    let target_inode = ROOT_INODE.find(target).unwrap();
-    target_inode.set_nlink(target_inode.get_nlink() + 1);
-    inode.map(|inode| Arc::new(OSInode::new(true, true, inode)))
+pub fn create_hardlink(name: &str, target: &str) -> Result<(), &'static str> {
+    info!("create_hardlink: new name: {}, target: {}", name, target);
+    let inode = ROOT_INODE.find(target).unwrap();
+    inode.linkat(name)
 }
 ///unlink a file
-pub fn unlink(name: &str) -> bool {
-    ROOT_INODE.delete(name)
+pub fn unlink(name: &str) -> Result<(), &'static str> {
+    info!("unlink: {}", name);
+    let inode = ROOT_INODE.find(name).unwrap();
+    inode.delete(name)
 }
 
 /// Open a file
@@ -127,7 +128,7 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
         } else {
             // create file
             ROOT_INODE
-                .linkat(name, DiskInodeType::File, None)
+                .create(name)
                 .map(|inode| Arc::new(OSInode::new(readable, writable, inode)))
         }
     } else {
