@@ -129,7 +129,7 @@ pub fn sys_linkat(old_name: *const u8, new_name: *const u8) -> isize {
     if old_name == new_name {
         return -1;
     }
-    let task = current_task().unwrap();
+    // let task = current_task().unwrap();
     let token = current_user_token();
     let old_name = translated_str(token, old_name);
     let new_name = translated_str(token, new_name);
@@ -141,11 +141,12 @@ pub fn sys_linkat(old_name: *const u8, new_name: *const u8) -> isize {
         return -1;
     }
     info!("create_hardlink called");
-    if let Some(inode) = create_hardlink( new_name.as_str(), old_name.as_str()) {
-        let mut inner = task.inner_exclusive_access();
-        let fd = inner.alloc_fd();
-        inner.fd_table[fd] = Some(inode);
-        fd as isize
+    if let Some(_inode) = create_hardlink( new_name.as_str(), old_name.as_str()) {
+        // let mut inner = task.inner_exclusive_access();
+        // let fd = inner.alloc_fd();
+        // inner.fd_table[fd] = Some(inode);
+        // fd as isize
+        0
     } else {
         -1
     }
