@@ -292,14 +292,13 @@ impl Inode {
         if is_file {
             self.read_disk_inode(|disk_inode| disk_inode.read_at(offset, buf, &self.block_device))
         } else {
-            // let target_inode_id = self.read_disk_inode(|disk_inode| disk_inode.direct[0]);
-            // let (target_block_id, target_block_offset) = fs.get_disk_inode_pos(target_inode_id);
-            // get_block_cache(target_block_id as usize, Arc::clone(&self.block_device))
-            //     .lock()
-            //     .read(target_block_offset, |target_inode: &DiskInode| {
-            //         target_inode.read_at(offset, buf, &self.block_device)
-            //     })
-            offset
+            let target_inode_id = self.read_disk_inode(|disk_inode| disk_inode.direct[0]);
+            let (target_block_id, target_block_offset) = fs.get_disk_inode_pos(target_inode_id);
+            get_block_cache(target_block_id as usize, Arc::clone(&self.block_device))
+                .lock()
+                .read(target_block_offset, |target_inode: &DiskInode| {
+                    target_inode.read_at(offset, buf, &self.block_device)
+                })
         }
     }
     /// Write data to current inode
