@@ -12,7 +12,6 @@ pub struct Inode {
     block_offset: usize,
     fs: Arc<Mutex<EasyFileSystem>>,
     block_device: Arc<dyn BlockDevice>,
-    deleted: bool,
 }
 
 impl Inode {
@@ -28,7 +27,6 @@ impl Inode {
             block_offset,
             fs,
             block_device,
-            deleted: false,
         }
     }
     /// Get the number of hard links
