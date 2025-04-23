@@ -1,10 +1,11 @@
 use crate::{
     fs::{open_file, OpenFlags},
-    mm::{translated_ref, translated_refmut, translated_str},
+    mm::{translated_ref, translated_refmut, translated_str, VirtAddr, PageTable, PhysAddr},
     task::{
         current_process, current_task, current_user_token, exit_current_and_run_next, pid2process,
         suspend_current_and_run_next, SignalFlags,
     },
+    timer::get_time_us,
 };
 use alloc::{string::String, sync::Arc, vec::Vec};
 
@@ -152,11 +153,33 @@ pub fn sys_kill(pid: usize, signal: u32) -> isize {
 /// HINT: You might reimplement it with virtual memory management.
 /// HINT: What if [`TimeVal`] is splitted by two pages ?
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_get_time NOT IMPLEMENTED",
-        current_task().unwrap().process.upgrade().unwrap().getpid()
-    );
-    -1
+    trace!("kernel: sys_get_time");
+    // get vpn from ts
+    info!("kernel: sys_get_time");
+    let us = get_time_us();
+   let time_val = TimeVal {
+    sec: us / 1_000_000,
+    usec: us % 1_000_000,
+   };
+    copy_to_user(current_user_token(), _ts as usize, &time_val);
+    0
+}
+
+
+fn copy_to_user(token: usize, dst: usize,  time_val: & TimeVal) {
+    let start = dst;
+    let start_va = VirtAddr::from(start);
+    let start_vpn = start_va.floor();
+    let page_table = PageTable::from_token(token);
+    let ppn : PhysAddr = page_table.translate(start_vpn).unwrap().ppn().into();
+    let ppn_usize : usize = ppn.into();
+    let pa : PhysAddr = PhysAddr::from(ppn_usize + start_va.page_offset());
+    let ptr = pa.get_mut::<TimeVal>();
+    
+    *ptr = TimeVal {
+        sec: time_val.sec,
+        usec: time_val.usec,
+    };
 }
 
 /// mmap syscall
