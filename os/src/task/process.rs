@@ -14,7 +14,7 @@ use alloc::sync::{Arc, Weak};
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefMut;
-
+use crate::task::current_task;
 /// Process Control Block
 pub struct ProcessControlBlock {
     /// immutable
@@ -49,6 +49,14 @@ pub struct ProcessControlBlockInner {
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// condvar list
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+    /// deadlock detection
+    pub deadlock_detection: bool,
+    /// mutex available resources list
+    pub mutex_available_resources: Vec<usize>,
+    /// mutex allocation matrix
+    pub mutex_allocation_matrix: Vec<Vec<usize>>,
+    /// mutext need matrix
+    pub mutex_need_matrix: Vec<Vec<usize>>,
 }
 
 impl ProcessControlBlockInner {
@@ -119,9 +127,16 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    deadlock_detection: false,
+                    mutex_available_resources: Vec::new(),
+                    mutex_allocation_matrix: Vec::new(),
+                    mutex_need_matrix: Vec::new(),
                 })
             },
         });
+        // push an empty vector to allocation matrix and need matrix
+        process.inner_exclusive_access().mutex_allocation_matrix.push(Vec::new());
+        process.inner_exclusive_access().mutex_need_matrix.push(Vec::new());
         // create a main thread, we should allocate ustack and trap_cx here
         let task = Arc::new(TaskControlBlock::new(
             Arc::clone(&process),
@@ -228,6 +243,10 @@ impl ProcessControlBlock {
                 new_fd_table.push(None);
             }
         }
+        // copy resources
+        let resources = parent.mutex_available_resources.clone();
+        let allocation_matrix = parent.mutex_allocation_matrix.clone();
+        let need_matrix = parent.mutex_need_matrix.clone();
         // create child process pcb
         let child = Arc::new(Self {
             pid,
@@ -245,6 +264,10 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+                    deadlock_detection: false,
+                    mutex_available_resources: resources,
+                    mutex_allocation_matrix: allocation_matrix,
+                    mutex_need_matrix: need_matrix,
                 })
             },
         });
@@ -282,4 +305,97 @@ impl ProcessControlBlock {
     pub fn getpid(&self) -> usize {
         self.pid.0
     }
+
+
+    /// try lock a mutex use backtracking algorithm
+    pub fn try_lock_mutex(&self, mutex_id: usize) -> Result<bool, &'static str> {
+        let process_inner = self.inner_exclusive_access();
+        if !process_inner.deadlock_detection {
+            info!("deadlock detection is false");
+            return Ok(true);
+        }
+        info!("deadlock detection is true");
+        let current_task = current_task().unwrap();
+        let current_task_inner = current_task.inner_exclusive_access();
+        let current_tid = current_task_inner.res.as_ref().unwrap().tid;
+        // get a copy of available resources, allocation matrix and need matrix
+        info!("cloning available resources, allocation matrix and need matrix");
+        let mut available_resources = process_inner.mutex_available_resources.clone();
+        let mut allocation_matrix = process_inner.mutex_allocation_matrix.clone();
+        let mut need_matrix = process_inner.mutex_need_matrix.clone();
+        // compute the need matrix which is the difference between allocation matrix and available resources
+        for i in 0..need_matrix.len() {
+            for j in 0..need_matrix[i].len() {
+                need_matrix[i][j] = available_resources[j]-allocation_matrix[i][j];
+            }
+        }
+        // check if the mutex can be locked
+        if  need_matrix[current_tid][mutex_id] < 1 {
+            return Err("exceed the maximum limit");
+        }
+        if available_resources[mutex_id] < 1 {
+            return Err("no available resources");
+        }
+        // try allocate the mutex
+        available_resources[mutex_id] -= 1;
+        allocation_matrix[current_tid][mutex_id] += 1;
+        need_matrix[current_tid][mutex_id] -= 1;
+        // run security check
+        info!("running security check");
+        if !check_deadlock(&available_resources, &allocation_matrix, &need_matrix) {
+            return Ok(false);
+        }
+        Ok(true)
+    }
+    
+
+}
+
+fn check_deadlock(available_resources: &Vec<usize>, allocation_matrix: &Vec<Vec<usize>>, need_matrix: &Vec<Vec<usize>>) -> bool {
+    let mut work = available_resources.clone();
+    let mut finish = vec![false; allocation_matrix.len()];
+    let process_count = allocation_matrix.len();
+    let resource_count = available_resources.len();
+    
+    // 安全序列，用于记录进程的安全执行顺序
+    let mut safe_sequence = Vec::with_capacity(process_count);
+    
+    // 重复检查直到无法找到更多可完成的进程
+    let mut found_process = true;
+    while found_process {
+        found_process = false;
+        
+        // 检查每个进程
+        for i in 0..process_count {
+            // 如果进程尚未完成且资源需求可以被满足
+            if !finish[i] {
+                // 检查进程i的所有资源需求是否能被满足
+                let mut can_allocate = true;
+                for j in 0..resource_count {
+                    if need_matrix[i][j] > work[j] {
+                        can_allocate = false;
+                        break;
+                    }
+                }
+                
+                if can_allocate {
+                    // 找到一个可以完成的进程
+                    found_process = true;
+                    
+                    // 模拟进程完成并释放资源
+                    for j in 0..resource_count {
+                        work[j] += allocation_matrix[i][j];
+                    }
+                    
+                    // 标记进程为已完成
+                    finish[i] = true;
+                    safe_sequence.push(i);
+                }
+            }
+        }
+    }
+    
+    // 检查是否所有进程都能完成
+    finish.iter().all(|&x| x)
+    
 }

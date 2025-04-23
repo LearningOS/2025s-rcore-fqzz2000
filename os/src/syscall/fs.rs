@@ -4,10 +4,10 @@ use crate::task::{current_process, current_task, current_user_token};
 use alloc::sync::Arc;
 /// write syscall
 pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_write",
-        current_task().unwrap().process.upgrade().unwrap().getpid()
-    );
+    // trace!(
+    //     "kernel:pid[{}] sys_write",
+    //     current_task().unwrap().process.upgrade().unwrap().getpid()
+    // );
     let token = current_user_token();
     let process = current_process();
     let inner = process.inner_exclusive_access();
@@ -28,10 +28,10 @@ pub fn sys_write(fd: usize, buf: *const u8, len: usize) -> isize {
 }
 /// read syscall
 pub fn sys_read(fd: usize, buf: *const u8, len: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] sys_read",
-        current_task().unwrap().process.upgrade().unwrap().getpid()
-    );
+    // trace!(
+    //     "kernel:pid[{}] sys_read",
+    //     current_task().unwrap().process.upgrade().unwrap().getpid()
+    // );
     let token = current_user_token();
     let process = current_process();
     let inner = process.inner_exclusive_access();
