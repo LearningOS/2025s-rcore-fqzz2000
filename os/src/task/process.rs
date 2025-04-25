@@ -57,6 +57,14 @@ pub struct ProcessControlBlockInner {
     pub mutex_allocation_matrix: Vec<Vec<usize>>,
     /// mutext need matrix
     pub mutex_need_matrix: Vec<Vec<usize>>,
+    /// semaphore available resources list
+    pub semaphore_available_resources: Vec<usize>,
+    /// semaphore allocation matrix
+    pub semaphore_allocation_matrix: Vec<Vec<usize>>,
+    /// semaphore need matrix
+    pub semaphore_need_matrix: Vec<Vec<usize>>,
+    /// semaphore max list
+    pub semaphore_max_list: Vec<usize>,
 }
 
 impl ProcessControlBlockInner {
@@ -131,12 +139,18 @@ impl ProcessControlBlock {
                     mutex_available_resources: Vec::new(),
                     mutex_allocation_matrix: Vec::new(),
                     mutex_need_matrix: Vec::new(),
+                    semaphore_available_resources: Vec::new(),
+                    semaphore_allocation_matrix: Vec::new(),
+                    semaphore_need_matrix: Vec::new(),
+                    semaphore_max_list: Vec::new(),
                 })
             },
         });
         // push an empty vector to allocation matrix and need matrix
         process.inner_exclusive_access().mutex_allocation_matrix.push(Vec::new());
         process.inner_exclusive_access().mutex_need_matrix.push(Vec::new());
+        process.inner_exclusive_access().semaphore_allocation_matrix.push(Vec::new());
+        process.inner_exclusive_access().semaphore_need_matrix.push(Vec::new());
         // create a main thread, we should allocate ustack and trap_cx here
         let task = Arc::new(TaskControlBlock::new(
             Arc::clone(&process),
@@ -247,6 +261,10 @@ impl ProcessControlBlock {
         let resources = parent.mutex_available_resources.clone();
         let allocation_matrix = parent.mutex_allocation_matrix.clone();
         let need_matrix = parent.mutex_need_matrix.clone();
+        let semaphore_resources = parent.semaphore_available_resources.clone();
+        let semaphore_allocation_matrix = parent.semaphore_allocation_matrix.clone();
+        let semaphore_need_matrix = parent.semaphore_need_matrix.clone();
+        let semaphore_max_list = parent.semaphore_max_list.clone();
         // create child process pcb
         let child = Arc::new(Self {
             pid,
@@ -268,6 +286,10 @@ impl ProcessControlBlock {
                     mutex_available_resources: resources,
                     mutex_allocation_matrix: allocation_matrix,
                     mutex_need_matrix: need_matrix,
+                    semaphore_available_resources: semaphore_resources,
+                    semaphore_allocation_matrix: semaphore_allocation_matrix,
+                    semaphore_need_matrix: semaphore_need_matrix,
+                    semaphore_max_list: semaphore_max_list,
                 })
             },
         });
@@ -304,6 +326,58 @@ impl ProcessControlBlock {
     /// get pid
     pub fn getpid(&self) -> usize {
         self.pid.0
+    }
+
+    /// try lock a semaphore use backtracking algorithm
+    pub fn try_lock_semaphore(&self, semaphore_id: usize) -> Result<bool, &'static str> {
+        let process_inner = self.inner_exclusive_access();
+        if !process_inner.deadlock_detection {
+            // info!("deadlock detection is false");
+            return Ok(true);
+        }
+        info!("available resources on semaphore id: {} is {}", semaphore_id, process_inner.semaphore_available_resources[semaphore_id]);
+        // info!("deadlock detection is true");
+        let current_task = current_task().unwrap();
+        let current_task_inner = current_task.inner_exclusive_access();
+        let current_tid = current_task_inner.res.as_ref().unwrap().tid;
+        // get a copy of available resources, allocation matrix and need matrix
+        // info!("cloning available resources, allocation matrix and need matrix");
+        let mut available_resources = process_inner.semaphore_available_resources.clone();
+        let  mut allocation_matrix = process_inner.semaphore_allocation_matrix.clone();
+        let mut need_matrix = process_inner.semaphore_need_matrix.clone();
+        info!("numer of tasks is {}", allocation_matrix.len());
+        for i in 0..available_resources.len() {
+            info!("available resources on semaphore id: {} is {}", i, available_resources[i]);
+        }
+        for i in 0..allocation_matrix.len() {
+            for j in 0..allocation_matrix[i].len() {
+                info!("allocation matrix on task id: {} and semaphore id: {} is {}", i, j, allocation_matrix[i][j]);
+            }
+        }
+        // compute the need matrix which is the difference between allocation matrix and available resources
+        // for i in 0..need_matrix.len() {
+        //     for j in 0..need_matrix[i].len() {
+        //         need_matrix[i][j] = process_inner.semaphore_max_list[j]-allocation_matrix[i][j];
+        //         info!("need matrix on task id: {} and semaphore id: {} is {}", i, j, need_matrix[i][j]);
+        //     }
+        // }
+        // check if the semaphore can be locked
+        // if  need_matrix[current_tid][semaphore_id] < 1 {
+        //     return Err("exceed the maximum limit");
+        // }
+        if available_resources[semaphore_id] < 1 {
+            return Ok(false);
+        }
+        // try allocate the semaphore
+        available_resources[semaphore_id] -= 1;
+        allocation_matrix[current_tid][semaphore_id] += 1;
+        need_matrix[current_tid][semaphore_id] += 1;
+        
+        // info!("running security check");
+        if !check_deadlock(&available_resources, &allocation_matrix, &need_matrix) {
+            return Err("deadlock detected");
+        }
+        Ok(true)
     }
 
 

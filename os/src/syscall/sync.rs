@@ -142,19 +142,26 @@ pub fn sys_semaphore_create(res_count: usize) -> isize {
         .map(|(id, _)| id)
     {
         process_inner.semaphore_list[id] = Some(Arc::new(Semaphore::new(res_count)));
+        process_inner.semaphore_available_resources[id] = res_count;
+        process_inner.semaphore_allocation_matrix[current_task().unwrap().inner_exclusive_access().res.as_ref().unwrap().tid][id] = 0;
+        process_inner.semaphore_need_matrix[current_task().unwrap().inner_exclusive_access().res.as_ref().unwrap().tid][id] = 0;
         id
     } else {
         process_inner
             .semaphore_list
             .push(Some(Arc::new(Semaphore::new(res_count))));
+        process_inner.semaphore_available_resources.push(res_count);
+        process_inner.semaphore_max_list.push(res_count);
+        process_inner.semaphore_allocation_matrix.iter_mut().for_each(|v| v.push(0));
+        process_inner.semaphore_need_matrix.iter_mut().for_each(|v| v.push(0));
         process_inner.semaphore_list.len() - 1
     };
     id as isize
 }
 /// semaphore up syscall
 pub fn sys_semaphore_up(sem_id: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] tid[{}] sys_semaphore_up",
+    info!(
+        "kernel:pid[{}] tid[{}] sys_semaphore_up {}",
         current_task().unwrap().process.upgrade().unwrap().getpid(),
         current_task()
             .unwrap()
@@ -162,19 +169,24 @@ pub fn sys_semaphore_up(sem_id: usize) -> isize {
             .res
             .as_ref()
             .unwrap()
-            .tid
+            .tid,
+        sem_id
     );
     let process = current_process();
-    let process_inner = process.inner_exclusive_access();
+    let mut process_inner = process.inner_exclusive_access();
+    process_inner.semaphore_available_resources[sem_id] += 1;
+    process_inner.semaphore_allocation_matrix[current_task().unwrap().inner_exclusive_access().res.as_ref().unwrap().tid][sem_id] -= 1;
+    
     let sem = Arc::clone(process_inner.semaphore_list[sem_id].as_ref().unwrap());
     drop(process_inner);
+    drop(process);
     sem.up();
     0
 }
 /// semaphore down syscall
 pub fn sys_semaphore_down(sem_id: usize) -> isize {
-    trace!(
-        "kernel:pid[{}] tid[{}] sys_semaphore_down",
+    info!(
+        "kernel:pid[{}] tid[{}] sys_semaphore_down {}",
         current_task().unwrap().process.upgrade().unwrap().getpid(),
         current_task()
             .unwrap()
@@ -182,12 +194,32 @@ pub fn sys_semaphore_down(sem_id: usize) -> isize {
             .res
             .as_ref()
             .unwrap()
-            .tid
+            .tid,
+        sem_id
     );
     let process = current_process();
+
+    match process.try_lock_semaphore(sem_id) {
+        Err(e) => {
+            info!("try lock semaphore failed: {}", e);
+            return -0xdead as isize;
+        }
+        Ok(true) => {
+
+        let mut process_inner = process.inner_exclusive_access();
+        process_inner.semaphore_available_resources[sem_id] -= 1;
+        process_inner.semaphore_allocation_matrix[current_task().unwrap().inner_exclusive_access().res.as_ref().unwrap().tid][sem_id] += 1;
+        drop(process_inner);
+    }
+    Ok(false) => {
+        info!("try lock semaphore wait");
+    }
+    }
     let process_inner = process.inner_exclusive_access();
+    info!("semaphore_available_resources: {} for {}  ", process_inner.semaphore_available_resources[sem_id], sem_id);
     let sem = Arc::clone(process_inner.semaphore_list[sem_id].as_ref().unwrap());
     drop(process_inner);
+    drop(process);
     sem.down();
     0
 }

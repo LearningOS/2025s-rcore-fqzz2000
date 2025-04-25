@@ -33,8 +33,12 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     ));
     // insert new entry to process's allocation matrix and need matrix with length of available resources
     let mut process_inner = process.inner_exclusive_access();
-    process_inner.mutex_allocation_matrix[new_task.inner_exclusive_access().res.as_ref().unwrap().tid] = vec![0; process_inner.mutex_available_resources.len()];
-    process_inner.mutex_need_matrix[new_task.inner_exclusive_access().res.as_ref().unwrap().tid] = vec![0; process_inner.mutex_available_resources.len()];
+    let length = process_inner.mutex_available_resources.len();
+    process_inner.mutex_allocation_matrix.push(vec![0; length]);
+    process_inner.mutex_need_matrix.push(vec![0; length]);
+    let semaphore_length = process_inner.semaphore_available_resources.len();
+    process_inner.semaphore_allocation_matrix.push(vec![0; semaphore_length]);
+    process_inner.semaphore_need_matrix.push(vec![0; semaphore_length]);
     drop(process_inner);
     // add new task to scheduler
     add_task(Arc::clone(&new_task));

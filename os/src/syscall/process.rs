@@ -155,7 +155,6 @@ pub fn sys_kill(pid: usize, signal: u32) -> isize {
 pub fn sys_get_time(_ts: *mut TimeVal, _tz: usize) -> isize {
     trace!("kernel: sys_get_time");
     // get vpn from ts
-    info!("kernel: sys_get_time");
     let us = get_time_us();
    let time_val = TimeVal {
     sec: us / 1_000_000,
